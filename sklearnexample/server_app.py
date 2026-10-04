@@ -6,7 +6,7 @@ from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
 
 from sklearnexample.task import (
-    create_log_reg_and_instantiate_parameters,
+    create_mlp_and_instantiate_parameters,
     get_model_params,
     set_model_params,
 )
@@ -23,8 +23,7 @@ def main(grid: Grid, context: Context) -> None:
     num_rounds: int = context.run_config["num-server-rounds"]
 
     # Create LogisticRegression Model
-    penalty = context.run_config["penalty"]
-    model = create_log_reg_and_instantiate_parameters(penalty)
+    model = create_mlp_and_instantiate_parameters()
     # Construct ArrayRecord representation
     arrays = ArrayRecord(get_model_params(model))
 

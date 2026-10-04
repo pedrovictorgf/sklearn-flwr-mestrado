@@ -8,7 +8,7 @@ from sklearn.metrics import log_loss
 
 from sklearnexample.task import (
     UNIQUE_LABELS,
-    create_log_reg_and_instantiate_parameters,
+    create_mlp_and_instantiate_parameters,
     get_model_params,
     load_data,
     set_model_params,
@@ -23,9 +23,9 @@ def train(msg: Message, context: Context):
     """Train the model on local data."""
 
     # Create LogisticRegression Model
-    penalty = context.run_config["penalty"]
+    # penalty = context.run_config["penalty"]
     # Create LogisticRegression Model
-    model = create_log_reg_and_instantiate_parameters(penalty)
+    model = create_mlp_and_instantiate_parameters()
 
     # Apply received pararameters
     ndarrays = msg.content["arrays"].to_numpy_ndarrays()
@@ -37,6 +37,9 @@ def train(msg: Message, context: Context):
     print("AQUIIII")
     print(context.node_config)
     X_train, y_train, _, _ = load_data(partition_id, num_partitions)
+
+    print(X_train.shape)
+    print(y_train.shape)
 
     # Ignore convergence failure due to low local epochs
     with warnings.catch_warnings():
@@ -69,7 +72,7 @@ def evaluate(msg: Message, context: Context):
     # Create LogisticRegression Model
     penalty = context.run_config["penalty"]
     # Create LogisticRegression Model
-    model = create_log_reg_and_instantiate_parameters(penalty)
+    model = create_mlp_and_instantiate_parameters()
 
     # Apply received pararameters
     ndarrays = msg.content["arrays"].to_numpy_ndarrays()
