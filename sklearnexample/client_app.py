@@ -1,5 +1,7 @@
 """sklearnexample: A Flower / PyTorch app."""
 
+import time
+
 import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
@@ -15,6 +17,7 @@ app = ClientApp()
 @app.train()
 def train(msg: Message, context: Context):
     """Train the model on local data."""
+    start_time = time.perf_counter()
 
     # Load the model and initialize it with the received weights
     model = Net()
@@ -41,6 +44,8 @@ def train(msg: Message, context: Context):
     metrics = {
         "train_loss": train_loss,
         "num-examples": len(trainloader.dataset),
+        "partition-id": context.node_config.get("partition-id", -1),
+        "duration_seconds": time.perf_counter() - start_time,
     }
     metric_record = MetricRecord(metrics)
     content = RecordDict({"arrays": model_record, "metrics": metric_record})
@@ -50,6 +55,7 @@ def train(msg: Message, context: Context):
 @app.evaluate()
 def evaluate(msg: Message, context: Context):
     """Evaluate the model on local data."""
+    start_time = time.perf_counter()
 
     # Load the model and initialize it with the received weights
     model = Net()
@@ -63,7 +69,7 @@ def evaluate(msg: Message, context: Context):
     _, valloader = load_data(data_path, batch_size)
 
     # Call the evaluation function
-    eval_loss, eval_acc = test_fn(
+    eval_loss, counts = test_fn(
         model,
         valloader,
         device,
@@ -72,8 +78,10 @@ def evaluate(msg: Message, context: Context):
     # Construct and return reply Message
     metrics = {
         "eval_loss": eval_loss,
-        "eval_acc": eval_acc,
+        **counts,
         "num-examples": len(valloader.dataset),
+        "partition-id": context.node_config.get("partition-id", -1),
+        "duration_seconds": time.perf_counter() - start_time,
     }
     metric_record = MetricRecord(metrics)
     content = RecordDict({"metrics": metric_record})

@@ -221,3 +221,6 @@ __marimo__/
 
 #csv
 *.csv
+
+# Experiment outputs
+results/

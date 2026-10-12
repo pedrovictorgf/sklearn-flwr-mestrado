@@ -32,3 +32,5 @@ local-epochs = 1
 learning-rate = 0.01
 batch-size = 256
 save-model = false
+# Where results.json and the model are written; empty means results/<timestamp>
+output-dir = ""

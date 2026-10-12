@@ -125,14 +125,19 @@ def test(net, testloader, device):
     net.to(device)
     net.eval()
     criterion = torch.nn.CrossEntropyLoss()
-    correct, loss = 0, 0.0
+    loss = 0.0
+    # Confusion matrix counts, where the positive class is the attack (label 1)
+    counts = {"tp": 0, "fp": 0, "tn": 0, "fn": 0}
     with torch.no_grad():
         for features, labels in testloader:
             features = features.to(device)
             labels = labels.to(device)
             outputs = net(features)
             loss += criterion(outputs, labels).item()
-            correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
-    accuracy = correct / len(testloader.dataset)
+            predictions = torch.max(outputs.data, 1)[1]
+            counts["tp"] += ((predictions == 1) & (labels == 1)).sum().item()
+            counts["fp"] += ((predictions == 1) & (labels == 0)).sum().item()
+            counts["tn"] += ((predictions == 0) & (labels == 0)).sum().item()
+            counts["fn"] += ((predictions == 0) & (labels == 1)).sum().item()
     loss = loss / len(testloader)
-    return loss, accuracy
+    return loss, counts
