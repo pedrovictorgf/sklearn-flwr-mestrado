@@ -1,9 +1,16 @@
 import pandas as pd
 import numpy as np
+import gc
+from pathlib import Path
+from datasets import Dataset
+from flwr_datasets.partitioner import DirichletPartitioner
 
-TRAINING_DATASET = "GenIDS-UNSW15"
+TRAINING_DATASET = "GenIDS-CIC17"
 TARGET_COLUMN = "binary"
-datasets = {"GenIDS-UNSW15": pd.read_csv("sklearnexample/GenIDS-UNSW15.csv").drop(columns=['multiclass'])}
+DATASET_GROUPS = { 0: "sklearnexample/GenIDS-UNSW15-pos.csv",
+                   1: "sklearnexample/GenIDS-CIC17-pos.csv" }
+
+OUTPUT_DIR = Path("sklearnexample/partitions")
 
 METADATA_COLUMNS = {
     "binary",
@@ -92,6 +99,30 @@ def prepare_datasets(dataframes, target_column):
     features[TRAINING_DATASET][TARGET_COLUMN] = targets[TRAINING_DATASET]
 
     return features[TRAINING_DATASET]
+
+def generate_partitions(num_clients_per_dataset: int = 2, alpha: float = 0.5):
+    for group_id, file_path in DATASET_GROUPS.items():
+        dataset = Dataset.from_csv(file_path)
+
+        partitioner = DirichletPartitioner(num_partitions=num_clients_per_dataset,
+                                           partition_by='binary',
+                                           alpha=alpha)
+        partitioner.dataset = dataset
+        del dataset
+
+        for local_id in range(num_clients_per_dataset):
+            global_partition_id = group_id *num_clients_per_dataset + local_id
+            partition_df = partitioner.load_partition(local_id)
+
+
+            output_file = OUTPUT_DIR / f"client_{global_partition_id}.parquet"
+            partition_df.to_parquet(output_file)
+            # partition_df.to_parquet(output_file, index=False)
+            del partition_df
+        del partitioner
+        gc.collect()
+
+
 # for col in df.columns:
 #     if col == "binary" or col == "multiclass":
 #         continue
@@ -110,5 +141,6 @@ def prepare_datasets(dataframes, target_column):
 
 # features, targets, target_mapping = prepare_datasets(datasets, TARGET_COLUMN)
 
-df = prepare_datasets(datasets, TARGET_COLUMN)
+# df = prepare_datasets(datasets, TARGET_COLUMN)
+
 # pd.concat

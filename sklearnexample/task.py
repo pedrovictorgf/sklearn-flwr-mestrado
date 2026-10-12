@@ -1,84 +1,125 @@
+"""sklearnexample: A Flower / PyTorch app."""
+
 import numpy as np
-import pandas as pd
-from datasets import Dataset, load_dataset
-from flwr.common import NDArrays
-from flwr_datasets import FederatedDataset
-from flwr_datasets.partitioner import IidPartitioner
-from sklearn.linear_model import LogisticRegression
-from sklearn.neural_network import MLPClassifier
+import pyarrow as pa
+import pyarrow.parquet as pq
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
 
-from sklearnexample.preprocess import (
-    prepare_datasets, TARGET_COLUMN
-)
+# Mapeamento direto e leve dos arquivos por cliente
+CLIENT_DATASETS = { 0: "sklearnexample/partitions/client_0.parquet",
+                    1: "sklearnexample/partitions/client_1.parquet",
+                    2: "sklearnexample/partitions/client_2.parquet",
+                    3: "sklearnexample/partitions/client_3.parquet",}
 
-# This information is needed to create a correct scikit-learn model
-UNIQUE_LABELS = [0, 1]
-FEATURES = ["petal_length", "petal_width", "sepal_length", "sepal_width"]
-
-
-def get_model_params(model: MLPClassifier) -> NDArrays:
-    """Return the parameters of a sklearn LogisticRegression model."""
-    params = []
-
-    for coef, intercept in zip(model.coefs_, model.intercepts_):
-        params.append(coef)
-        params.append(intercept)
-
-    return params
+TARGET_COLUMN = "binary"
+N_FEATURES = 70
+N_CLASSES = 2
 
 
-def set_model_params(model: MLPClassifier, params: NDArrays) -> MLPClassifier:
-    """Set the parameters of a sklean LogisticRegression model."""
-    for i in range(len(model.coefs_)):
-        model.coefs_[i] = params[2 * i]
-        model.intercepts_[i] = params[2 * i + 1]
-    return model
+class Net(nn.Module):
+    """1D CNN over the flow features, treated as a single-channel sequence."""
+
+    def __init__(self):
+        super(Net, self).__init__()
+        self.conv1 = nn.Conv1d(1, 16, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool1d(2)
+        self.conv2 = nn.Conv1d(16, 32, kernel_size=3, padding=1)
+        # Two poolings: 70 -> 35 -> 17
+        self.fc1 = nn.Linear(32 * (N_FEATURES // 4), 64)
+        self.fc2 = nn.Linear(64, N_CLASSES)
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # (batch, features) -> (batch, 1, features)
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = x.flatten(1)
+        x = F.relu(self.fc1(x))
+        return self.fc2(x)
 
 
-def set_initial_params(model: MLPClassifier, n_classes: int, n_features: int):
-    """Set initial parameters as zeros.
-
-    Required since model params are uninitialized until model.fit is called but server
-    asks for initial parameters from clients at launch. Refer to
-    sklearn.linear_model.LogisticRegression documentation for more information.
-    """
-    X_mock = np.zeros((n_classes, n_features))
-    y_mock = np.array([0, 1])
-    model.partial_fit(X_mock, y_mock, classes=np.arange(n_classes))
-
-
-def create_mlp_and_instantiate_parameters():
-    model = MLPClassifier()
-    set_initial_params(model, n_features=70, n_classes=2)
-    return model
-
-fds = None  # Cache FederatedDataset
-partitioner = None
-
-def load_data(partition_id: int, num_partitions: int):
+def load_data(partition_id: int, batch_size: int):
     """Load the data for the given partition."""
-    global fds
-    global partitioner
-    if partitioner is None:
-        partitioner = IidPartitioner(num_partitions=num_partitions)
-        # df = pd.read_csv("//sklearnexample/GenIDS-UNSW15.csv")
-        datasets = {"GenIDS-UNSW15": pd.read_csv("sklearnexample/GenIDS-UNSW15.csv").drop(columns=['multiclass'])}
-        df = prepare_datasets(datasets, TARGET_COLUMN)
-        fds = Dataset.from_pandas(df)
-        # fds = FederatedDataset(
-        #     dataset="hitorilabs/iris", partitioners={"train": partitioner}
-        # )
-        # fds =load_dataset("/home/pedrovictorgf/PycharmProjects/sklearn-flwr-mestrado-2/sklearnexample/", data_files=["GenIDS-UNSW15.csv"])
-        if partitioner is not None:
-            partitioner.dataset = fds
+    file_path = CLIENT_DATASETS.get(partition_id)
+    if file_path is None: raise ValueError(
+        f"O partition_id {partition_id} não possui um dataset associado em CLIENT_DATASETS.")
 
-    # dataset = fds.load_partition(partition_id, "train").with_format("pandas")[:]
-    dataset = partitioner.load_partition(partition_id).with_format("pandas")[:]
-    # y = df['binary'].astype(str)  # string para o label encoder
-    # X = df.drop(columns=['binary'])
-    X = dataset.drop(columns=[TARGET_COLUMN])
-    y = dataset[TARGET_COLUMN]
-    # Split the on-edge data: 80% train, 20% test
-    X_train, X_test = X[: int(0.8 * len(X))], X[int(0.8 * len(X)) :]
-    y_train, y_test = y[: int(0.8 * len(y))], y[int(0.8 * len(y)) :]
-    return X_train.values, y_train.values, X_test.values, y_test.values
+    parquet_file = pq.ParquetFile(file_path)
+    feature_names = [
+        name for name in parquet_file.schema_arrow.names if name != TARGET_COLUMN
+    ]
+
+    # Split the on-edge data: 80% train, 20% test (fixed seed so that train and
+    # evaluate always see the same split)
+    indices = np.random.default_rng(42).permutation(parquet_file.metadata.num_rows)
+    split = int(0.8 * len(indices))
+    train_idx, test_idx = indices[:split], indices[split:]
+
+    y = parquet_file.read(columns=[TARGET_COLUMN]).column(0).to_numpy()
+    y_train = y[train_idx].astype(np.int64)
+    y_test = y[test_idx].astype(np.int64)
+
+    # Read, scale and store one feature at a time, so that the only large arrays
+    # ever allocated are the final float32 ones. Each feature is scaled with the
+    # statistics of the local train split, in float64 because the timestamp
+    # features (~1e12) do not fit the precision of float32.
+    X_train = np.empty((len(train_idx), len(feature_names)), dtype=np.float32)
+    X_test = np.empty((len(test_idx), len(feature_names)), dtype=np.float32)
+    for i, name in enumerate(feature_names):
+        column = np.log1p(parquet_file.read(columns=[name]).column(0).to_numpy())
+        train_column = column[train_idx]
+        mean = train_column.mean()
+        std = train_column.std()
+        if std == 0:
+            std = 1.0
+        X_train[:, i] = (train_column - mean) / std
+        X_test[:, i] = (column[test_idx] - mean) / std
+    parquet_file.close()
+    # Arrow keeps freed decode buffers cached in its memory pool
+    pa.default_memory_pool().release_unused()
+
+    train_dataset = TensorDataset(torch.from_numpy(X_train), torch.from_numpy(y_train))
+    test_dataset = TensorDataset(torch.from_numpy(X_test), torch.from_numpy(y_test))
+    trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    testloader = DataLoader(test_dataset, batch_size=batch_size)
+    return trainloader, testloader
+
+
+def train(net, trainloader, epochs, lr, device):
+    """Train the model on the training set."""
+    net.to(device)  # move model to GPU if available
+    criterion = torch.nn.CrossEntropyLoss().to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9)
+    net.train()
+    running_loss = 0.0
+    for _ in range(epochs):
+        for features, labels in trainloader:
+            features = features.to(device)
+            labels = labels.to(device)
+            optimizer.zero_grad()
+            loss = criterion(net(features), labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+    avg_trainloss = running_loss / (epochs * len(trainloader))
+    return avg_trainloss
+
+
+def test(net, testloader, device):
+    """Validate the model on the test set."""
+    net.to(device)
+    net.eval()
+    criterion = torch.nn.CrossEntropyLoss()
+    correct, loss = 0, 0.0
+    with torch.no_grad():
+        for features, labels in testloader:
+            features = features.to(device)
+            labels = labels.to(device)
+            outputs = net(features)
+            loss += criterion(outputs, labels).item()
+            correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
+    accuracy = correct / len(testloader.dataset)
+    loss = loss / len(testloader)
+    return loss, accuracy

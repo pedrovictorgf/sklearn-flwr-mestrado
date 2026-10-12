@@ -1,16 +1,15 @@
 ---
 tags: [quickstart, tabular, fds]
-dataset: [Iris]
-framework: [scikit-learn]
+dataset: [GenIDS-UNSW15, GenIDS-CIC17]
+framework: [torch]
 ---
 
-# Federated Learning with scikit-learn and Flower (Quickstart Example)
+# Federated Learning with PyTorch and Flower (1D CNN on network flow data)
 
-This example of Flower uses `scikit-learn`'s `LogisticRegression` model to train a federated learning system on
-"iris" (tabular) dataset.
-It will help you understand how to adapt Flower for use with `scikit-learn`.
-Running this example in itself is quite easy. This example uses [Flower Datasets](https://flower.ai/docs/datasets/) to
-download, partition and preprocess the dataset.
+This Flower app trains a 1D convolutional neural network with `PyTorch` to detect attacks in network flows
+(binary classification over 70 flow features). Each client reads its own pre-generated partition from
+`sklearnexample/partitions/`, created by `sklearnexample/preprocess.py` from the GenIDS-UNSW15 and GenIDS-CIC17
+datasets, and standardizes the features with its local statistics.
 
 ## Set up the project
 
@@ -65,7 +64,7 @@ flwr run . --stream
 You can also override some of the settings for your `ClientApp` and `ServerApp` defined in `pyproject.toml`. For example:
 
 ```bash
-flwr run . --run-config penalty="'l1'" --stream
+flwr run . --run-config "num-server-rounds=5 learning-rate=0.05" --stream
 ```
 
 ### Run with the Deployment Engine

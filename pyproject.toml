@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "quickstart-sklearn"
 version = "1.1.11"
-description = "Federated Learning with scikit-learn and Flower (Quickstart Example)"
+description = "Federated Learning with PyTorch and Flower (1D CNN on network flow data)"
 license = {file = "LICENSE"}
 dependencies = [
     "flwr[simulation]>=1.36.0",
     "flwr-datasets[vision]>=0.6.1",
-    "scikit-learn>=1.6.1",
+    "torch==2.10.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -26,7 +26,9 @@ serverapp = "sklearnexample.server_app:app"
 clientapp = "sklearnexample.client_app:app"
 
 [tool.flwr.app.config]
-penalty = "l2"
-num-server-rounds = 25
-min-available-clients = 2
+num-server-rounds = 3
+fraction-evaluate = 1.0
+local-epochs = 1
+learning-rate = 0.01
+batch-size = 256
 save-model = false

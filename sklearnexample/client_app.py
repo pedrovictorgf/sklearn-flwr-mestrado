@@ -1,18 +1,12 @@
-"""sklearnexample: A Flower / sklearn app."""
+"""sklearnexample: A Flower / PyTorch app."""
 
-import warnings
-
+import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
-from sklearn.metrics import log_loss
 
-from sklearnexample.task import (
-    UNIQUE_LABELS,
-    create_mlp_and_instantiate_parameters,
-    get_model_params,
-    load_data,
-    set_model_params,
-)
+from sklearnexample.task import Net, load_data
+from sklearnexample.task import test as test_fn
+from sklearnexample.task import train as train_fn
 
 # Flower ClientApp
 app = ClientApp()
@@ -22,43 +16,31 @@ app = ClientApp()
 def train(msg: Message, context: Context):
     """Train the model on local data."""
 
-    # Create LogisticRegression Model
-    # penalty = context.run_config["penalty"]
-    # Create LogisticRegression Model
-    model = create_mlp_and_instantiate_parameters()
-
-    # Apply received pararameters
-    ndarrays = msg.content["arrays"].to_numpy_ndarrays()
-    set_model_params(model, ndarrays)
+    # Load the model and initialize it with the received weights
+    model = Net()
+    model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model.to(device)
 
     # Load the data
     partition_id = context.node_config["partition-id"]
-    num_partitions = context.node_config["num-partitions"]
-    print("AQUIIII")
-    print(context.node_config)
-    X_train, y_train, _, _ = load_data(partition_id, num_partitions)
+    batch_size = context.run_config["batch-size"]
+    trainloader, _ = load_data(partition_id, batch_size)
 
-    print(X_train.shape)
-    print(y_train.shape)
-
-    # Ignore convergence failure due to low local epochs
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        # Train the model on local data
-        model.fit(X_train, y_train)
-
-    # Let's compute train loss
-    y_train_pred_proba = model.predict_proba(X_train)
-    train_logloss = log_loss(y_train, y_train_pred_proba, labels=UNIQUE_LABELS)
-    accuracy = model.score(X_train, y_train)
+    # Call the training function
+    train_loss = train_fn(
+        model,
+        trainloader,
+        context.run_config["local-epochs"],
+        msg.content["config"]["lr"],
+        device,
+    )
 
     # Construct and return reply Message
-    ndarrays = get_model_params(model)
-    model_record = ArrayRecord(ndarrays)
+    model_record = ArrayRecord(model.state_dict())
     metrics = {
-        "num-examples": len(X_train),
-        "train_logloss": train_logloss,
-        "train_accuracy": accuracy,
+        "train_loss": train_loss,
+        "num-examples": len(trainloader.dataset),
     }
     metric_record = MetricRecord(metrics)
     content = RecordDict({"arrays": model_record, "metrics": metric_record})
@@ -69,30 +51,29 @@ def train(msg: Message, context: Context):
 def evaluate(msg: Message, context: Context):
     """Evaluate the model on local data."""
 
-    # Create LogisticRegression Model
-    penalty = context.run_config["penalty"]
-    # Create LogisticRegression Model
-    model = create_mlp_and_instantiate_parameters()
-
-    # Apply received pararameters
-    ndarrays = msg.content["arrays"].to_numpy_ndarrays()
-    set_model_params(model, ndarrays)
+    # Load the model and initialize it with the received weights
+    model = Net()
+    model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model.to(device)
 
     # Load the data
     partition_id = context.node_config["partition-id"]
-    num_partitions = context.node_config["num-partitions"]
-    _, _, X_test, y_test = load_data(partition_id, num_partitions)
+    batch_size = context.run_config["batch-size"]
+    _, valloader = load_data(partition_id, batch_size)
 
-    # Evaluate the model on local data
-    y_test_pred_proba = model.predict_proba(X_test)
-    accuracy = model.score(X_test, y_test)
-    loss = log_loss(y_test, y_test_pred_proba, labels=UNIQUE_LABELS)
+    # Call the evaluation function
+    eval_loss, eval_acc = test_fn(
+        model,
+        valloader,
+        device,
+    )
 
     # Construct and return reply Message
     metrics = {
-        "num-examples": len(X_test),
-        "test_logloss": loss,
-        "accuracy": accuracy,
+        "eval_loss": eval_loss,
+        "eval_acc": eval_acc,
+        "num-examples": len(valloader.dataset),
     }
     metric_record = MetricRecord(metrics)
     content = RecordDict({"metrics": metric_record})
