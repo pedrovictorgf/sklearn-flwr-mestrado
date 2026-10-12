@@ -1,6 +1,11 @@
 # Experiment definition, used by run_experiment.sh.
 name: baseline
 
+# CPU cores of each client container. A client can have its own value by setting
+# `cpus` in its entry, e.g. a fraction to make it a slow client. Keep the total at
+# or below the cores of the machine: without a limit every client uses all of them.
+cpus: 2
+
 # One SuperNode is deployed per entry. `data` is the parquet file of the client,
 # relative to the project root; it is the only data mounted into its container.
 clients:
@@ -8,8 +13,10 @@ clients:
   - data: sklearnexample/partitions/client_1.parquet
   - data: sklearnexample/partitions/client_2.parquet
   - data: sklearnexample/partitions/client_3.parquet
+  - data: sklearnexample/partitions/client_4.parquet
+  - data: sklearnexample/partitions/client_5.parquet
 
 # Overrides of [tool.flwr.app.config] in pyproject.toml
 run-config:
   num-server-rounds: 3
-  save-model: true
+  save-model: false

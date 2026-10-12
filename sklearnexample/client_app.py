@@ -6,7 +6,7 @@ import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from sklearnexample.task import Net, get_data_path, load_data
+from sklearnexample.task import Net, get_data_path, limit_threads, load_data
 from sklearnexample.task import test as test_fn
 from sklearnexample.task import train as train_fn
 
@@ -18,6 +18,7 @@ app = ClientApp()
 def train(msg: Message, context: Context):
     """Train the model on local data."""
     start_time = time.perf_counter()
+    limit_threads(context.node_config)
 
     # Load the model and initialize it with the received weights
     model = Net()
@@ -56,6 +57,7 @@ def train(msg: Message, context: Context):
 def evaluate(msg: Message, context: Context):
     """Evaluate the model on local data."""
     start_time = time.perf_counter()
+    limit_threads(context.node_config)
 
     # Load the model and initialize it with the received weights
     model = Net()

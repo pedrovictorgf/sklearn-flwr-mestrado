@@ -11,6 +11,7 @@ It prints the value to pass to `flwr run --run-config`.
 """
 
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,12 @@ def load_config(config_file: Path) -> dict:
         if not data_file.is_file():
             sys.exit(f"{config_file}: data file not found: {data_file}")
         client["data"] = str(data_file)
+        # CPU cores of the client: its own value, else the one of the experiment
+        cpus = client.get("cpus", config.get("cpus"))
+        valid = not isinstance(cpus, bool) and isinstance(cpus, (int, float)) and cpus > 0
+        if cpus is not None and not valid:
+            sys.exit(f"{config_file}: cpus must be a positive number, got {cpus!r}")
+        client["cpus"] = cpus
     config["run-config"] = config.get("run-config") or {}
     return config
 
@@ -69,6 +76,17 @@ def build_compose(config: dict, run_dir: Path) -> dict:
     }
     for partition_id, client in enumerate(config["clients"]):
         number = partition_id + 1
+        node_config = f"partition-id={partition_id} data-path='{CONTAINER_DATA_PATH}'"
+        limits = {}
+        if client["cpus"] is not None:
+            # PyTorch starts one thread per core of the host whatever the limit of
+            # the container, so it is told how many threads to use as well
+            num_threads = max(1, math.ceil(client["cpus"]))
+            node_config += f" num-threads={num_threads}"
+            limits = {
+                "cpus": client["cpus"],
+                "environment": {"OMP_NUM_THREADS": str(num_threads)},
+            }
         services[f"supernode-{number}"] = {
             "image": f"flwr/supernode:{FLWR_VERSION}",
             "restart": "on-failure",
@@ -77,7 +95,7 @@ def build_compose(config: dict, run_dir: Path) -> dict:
                 "--superlink",
                 f"superlink:{SUPERLINK_FLEET_PORT}",
                 "--node-config",
-                f"partition-id={partition_id} data-path='{CONTAINER_DATA_PATH}'",
+                node_config,
                 "--host",
                 "0.0.0.0",
                 "--port",
@@ -89,6 +107,7 @@ def build_compose(config: dict, run_dir: Path) -> dict:
         }
         services[f"superexec-clientapp-{number}"] = {
             **superexec,
+            **limits,
             "command": [
                 "--insecure",
                 "--runtime-api-address",
@@ -145,6 +164,7 @@ def main() -> None:
                 "name": f"supernode-{partition_id + 1}",
                 "partition_id": partition_id,
                 "data_file": client["data"],
+                "cpus": client["cpus"],
             }
             for partition_id, client in enumerate(config["clients"])
         ],

@@ -57,6 +57,17 @@ def get_data_path(node_config) -> str:
     return file_path
 
 
+def limit_threads(node_config) -> None:
+    """Use the number of threads the node was given, if any.
+
+    PyTorch starts one thread per core of the host, so clients sharing a machine
+    slow each other down unless each one is told how many threads it may use.
+    """
+    num_threads = node_config.get("num-threads")
+    if num_threads:
+        torch.set_num_threads(num_threads)
+
+
 def load_data(file_path: str, batch_size: int):
     """Load the data from the given parquet file."""
     parquet_file = pq.ParquetFile(file_path)
