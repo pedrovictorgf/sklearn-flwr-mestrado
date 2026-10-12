@@ -1,0 +1,15 @@
+# Experiment definition, used by run_experiment.sh.
+name: baseline
+
+# One SuperNode is deployed per entry. `data` is the parquet file of the client,
+# relative to the project root; it is the only data mounted into its container.
+clients:
+  - data: sklearnexample/partitions/client_0.parquet
+  - data: sklearnexample/partitions/client_1.parquet
+  - data: sklearnexample/partitions/client_2.parquet
+  - data: sklearnexample/partitions/client_3.parquet
+
+# Overrides of [tool.flwr.app.config] in pyproject.toml
+run-config:
+  num-server-rounds: 3
+  save-model: true
