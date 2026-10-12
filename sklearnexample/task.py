@@ -40,12 +40,25 @@ class Net(nn.Module):
         return self.fc2(x)
 
 
-def load_data(partition_id: int, batch_size: int):
-    """Load the data for the given partition."""
+def get_data_path(node_config) -> str:
+    """Return the parquet file of the node.
+
+    In deployment each node sets `data-path` in its node config. In simulation it
+    is not set, so the file is looked up by `partition-id` in CLIENT_DATASETS.
+    """
+    file_path = node_config.get("data-path")
+    if file_path is not None:
+        return file_path
+
+    partition_id = node_config["partition-id"]
     file_path = CLIENT_DATASETS.get(partition_id)
     if file_path is None: raise ValueError(
         f"O partition_id {partition_id} não possui um dataset associado em CLIENT_DATASETS.")
+    return file_path
 
+
+def load_data(file_path: str, batch_size: int):
+    """Load the data from the given parquet file."""
     parquet_file = pq.ParquetFile(file_path)
     feature_names = [
         name for name in parquet_file.schema_arrow.names if name != TARGET_COLUMN

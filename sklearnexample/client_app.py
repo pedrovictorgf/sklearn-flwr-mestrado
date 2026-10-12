@@ -4,7 +4,7 @@ import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from sklearnexample.task import Net, load_data
+from sklearnexample.task import Net, get_data_path, load_data
 from sklearnexample.task import test as test_fn
 from sklearnexample.task import train as train_fn
 
@@ -23,9 +23,9 @@ def train(msg: Message, context: Context):
     model.to(device)
 
     # Load the data
-    partition_id = context.node_config["partition-id"]
+    data_path = get_data_path(context.node_config)
     batch_size = context.run_config["batch-size"]
-    trainloader, _ = load_data(partition_id, batch_size)
+    trainloader, _ = load_data(data_path, batch_size)
 
     # Call the training function
     train_loss = train_fn(
@@ -58,9 +58,9 @@ def evaluate(msg: Message, context: Context):
     model.to(device)
 
     # Load the data
-    partition_id = context.node_config["partition-id"]
+    data_path = get_data_path(context.node_config)
     batch_size = context.run_config["batch-size"]
-    _, valloader = load_data(partition_id, batch_size)
+    _, valloader = load_data(data_path, batch_size)
 
     # Call the evaluation function
     eval_loss, eval_acc = test_fn(
