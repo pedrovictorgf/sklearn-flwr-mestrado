@@ -18,5 +18,6 @@ clients:
 
 # Overrides of [tool.flwr.app.config] in pyproject.toml
 run-config:
+  model: cnn
   num-server-rounds: 3
   save-model: false

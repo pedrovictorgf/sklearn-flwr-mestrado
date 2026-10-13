@@ -10,7 +10,7 @@ from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
 
 from sklearnexample.metrics import MetricsCollector
-from sklearnexample.task import Net
+from sklearnexample.models import get_model_spec
 
 # Create ServerApp
 app = ServerApp()
@@ -26,7 +26,7 @@ def main(grid: Grid, context: Context) -> None:
     lr: float = context.run_config["learning-rate"]
 
     # Load global model
-    global_model = Net()
+    global_model = get_model_spec(context.run_config["model"]).build()
     arrays = ArrayRecord(global_model.state_dict())
 
     # Initialize FedAvg strategy
@@ -70,6 +70,7 @@ def main(grid: Grid, context: Context) -> None:
         "finished_at": finished_at.isoformat(),
         "duration_seconds": (finished_at - started_at).total_seconds(),
         "strategy": type(strategy).__name__,
+        "model": context.run_config["model"],
         "run_config": dict(context.run_config),
         "rounds": collector.rounds,
         "final_model": model_file,

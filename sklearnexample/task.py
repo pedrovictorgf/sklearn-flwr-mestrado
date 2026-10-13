@@ -4,8 +4,6 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 # Mapeamento direto e leve dos arquivos por cliente
@@ -15,29 +13,6 @@ CLIENT_DATASETS = { 0: "sklearnexample/partitions/client_0.parquet",
                     3: "sklearnexample/partitions/client_3.parquet",}
 
 TARGET_COLUMN = "binary"
-N_FEATURES = 70
-N_CLASSES = 2
-
-
-class Net(nn.Module):
-    """1D CNN over the flow features, treated as a single-channel sequence."""
-
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv1d(1, 16, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool1d(2)
-        self.conv2 = nn.Conv1d(16, 32, kernel_size=3, padding=1)
-        # Two poolings: 70 -> 35 -> 17
-        self.fc1 = nn.Linear(32 * (N_FEATURES // 4), 64)
-        self.fc2 = nn.Linear(64, N_CLASSES)
-
-    def forward(self, x):
-        x = x.unsqueeze(1)  # (batch, features) -> (batch, 1, features)
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = x.flatten(1)
-        x = F.relu(self.fc1(x))
-        return self.fc2(x)
 
 
 def get_data_path(node_config) -> str:
@@ -111,11 +86,13 @@ def load_data(file_path: str, batch_size: int):
     return trainloader, testloader
 
 
-def train(net, trainloader, epochs, lr, device):
+def train(net, criterion, trainloader, epochs, lr, device, weight_decay=0.0):
     """Train the model on the training set."""
     net.to(device)  # move model to GPU if available
-    criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9)
+    criterion = criterion.to(device)
+    optimizer = torch.optim.SGD(
+        net.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay
+    )
     net.train()
     running_loss = 0.0
     for _ in range(epochs):
@@ -131,11 +108,10 @@ def train(net, trainloader, epochs, lr, device):
     return avg_trainloss
 
 
-def test(net, testloader, device):
+def test(net, criterion, testloader, device):
     """Validate the model on the test set."""
     net.to(device)
     net.eval()
-    criterion = torch.nn.CrossEntropyLoss()
     loss = 0.0
     # Confusion matrix counts, where the positive class is the attack (label 1)
     counts = {"tp": 0, "fp": 0, "tn": 0, "fn": 0}

@@ -6,7 +6,8 @@ import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from sklearnexample.task import Net, get_data_path, limit_threads, load_data
+from sklearnexample.models import get_model_spec
+from sklearnexample.task import get_data_path, limit_threads, load_data
 from sklearnexample.task import test as test_fn
 from sklearnexample.task import train as train_fn
 
@@ -21,7 +22,8 @@ def train(msg: Message, context: Context):
     limit_threads(context.node_config)
 
     # Load the model and initialize it with the received weights
-    model = Net()
+    spec = get_model_spec(context.run_config["model"])
+    model = spec.build()
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -34,10 +36,12 @@ def train(msg: Message, context: Context):
     # Call the training function
     train_loss = train_fn(
         model,
+        spec.criterion(),
         trainloader,
         context.run_config["local-epochs"],
         msg.content["config"]["lr"],
         device,
+        weight_decay=spec.weight_decay,
     )
 
     # Construct and return reply Message
@@ -60,7 +64,8 @@ def evaluate(msg: Message, context: Context):
     limit_threads(context.node_config)
 
     # Load the model and initialize it with the received weights
-    model = Net()
+    spec = get_model_spec(context.run_config["model"])
+    model = spec.build()
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -73,6 +78,7 @@ def evaluate(msg: Message, context: Context):
     # Call the evaluation function
     eval_loss, counts = test_fn(
         model,
+        spec.criterion(),
         valloader,
         device,
     )

@@ -26,6 +26,8 @@ serverapp = "sklearnexample.server_app:app"
 clientapp = "sklearnexample.client_app:app"
 
 [tool.flwr.app.config]
+# One of the names in sklearnexample/models.py: cnn, mlp, logreg, svm
+model = "cnn"
 num-server-rounds = 3
 fraction-evaluate = 1.0
 local-epochs = 1
